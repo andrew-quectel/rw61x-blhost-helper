@@ -1,0 +1,34 @@
+{
+    "devices": {
+        "FCM363X": {
+            "fcb_file": "fcm363x.fcb.bin",
+            "interfaces": ["uart", "usb"],
+            "flash_sizes": ["8M", "16M"]
+        },
+        "FCM363XL": {
+            "fcb_file": "fcm363xl.fcb.bin",
+            "interfaces": ["uart"],
+            "flash_sizes": ["8M"]
+        },
+        "FCM365X": {
+            "fcb_file": "fcm365x.fcb.bin",
+            "interfaces": ["uart", "usb"],
+            "flash_sizes": ["8M"]
+        },
+        "FCMA62N": {
+            "fcb_file": "fcma62n.fcb.bin",
+            "interfaces": ["uart"],
+            "flash_sizes": ["8M"]
+        },
+        "FRDMRW612": {
+            "fcb_file": "frdmrw612.fcb.bin",
+            "interfaces": ["uart"],
+            "flash_sizes": ["64M"]
+        },
+        "RDRW612BGA": {
+            "fcb_file": "rdrw612bga.fcb.bin",
+            "interfaces": ["uart"],
+            "flash_sizes": ["64M"]
+        }
+    }
+}
