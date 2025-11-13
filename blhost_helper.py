@@ -24,8 +24,10 @@ class BlhostHelper:
     
     # FLASH size mapping
     FLASH_SIZE_MAPPING = {
+        "4M": 0x400000,     # 4MB
         "8M": 0x800000,     # 8MB
         "16M": 0x1000000,   # 16MB  
+        "32M": 0x2000000,   # 32MB
         "64M": 0x4000000,   # 64MB
     }
     
@@ -57,12 +59,14 @@ class BlhostHelper:
         self.config = self._load_config()
         
         # Connection parameters
-        self.device_model = None
+        self.device_category = None  # Device category, e.g., FCM363X
+        self.device_variant = None   # Device variant, e.g., FCM363XAA
+        self.variant_config = None   # Variant configuration
         self.interface = None
         self.connection_params = None
     
     def _load_config(self):
-        """Load device configuration"""
+        """Load device configuration from JSON file"""
         try:
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -70,35 +74,139 @@ class BlhostHelper:
             print(f"Error: Cannot load config file {self.config_file}: {e}")
             sys.exit(1)
     
-    def setup_device(self, device_model, interface, com_port=None, baudrate=None):
+    def get_all_device_models(self):
+        """Get all supported device models (categories and variants)"""
+        models = []
+        for category, cat_config in self.config["devices"].items():
+            models.append(category)
+            if "variants" in cat_config:
+                for variant in cat_config["variants"].keys():
+                    if variant != category:  # Avoid duplicates
+                        models.append(variant)
+        return models
+    
+    def find_device_config(self, device_model):
+        """
+        Find device configuration
+        Returns: (category, variant, variant_config) or (None, None, None)
+        """
+        # First check if it's a category
+        if device_model in self.config["devices"]:
+            category = device_model
+            cat_config = self.config["devices"][category]
+            
+            # Check if variants are defined
+            if "variants" not in cat_config or not cat_config["variants"]:
+                print(f"Error: Device {device_model} has no variants defined")
+                return None, None, None
+            
+            variants = cat_config["variants"]
+            
+            # If only one variant, auto-select it
+            if len(variants) == 1:
+                variant = list(variants.keys())[0]
+                print(f"Auto-selected variant: {variant}")
+                return category, variant, variants[variant]
+            
+            # Multiple variants, user needs to choose
+            return category, None, None
+        
+        # Check if it's a variant
+        for category, cat_config in self.config["devices"].items():
+            if "variants" in cat_config and device_model in cat_config["variants"]:
+                return category, device_model, cat_config["variants"][device_model]
+        
+        return None, None, None
+    
+    def prompt_variant_selection(self, category):
+        """Prompt user to select device variant"""
+        cat_config = self.config["devices"][category]
+        variants = cat_config["variants"]
+        
+        print(f"\nDevice {category} has multiple variants, please select:")
+        variant_list = list(variants.items())
+        
+        for i, (variant_name, variant_config) in enumerate(variant_list, 1):
+            desc = variant_config.get("description", variant_name)
+            flash_sizes = list(variant_config.get("flash_configs", {}).keys())
+            flash_info = ", ".join(flash_sizes) if flash_sizes else "N/A"
+            print(f"  {i}. {variant_name:15} - {desc} (Flash: {flash_info})")
+        
+        try:
+            choice = input(f"Please select (1-{len(variant_list)}): ").strip()
+            choice_idx = int(choice) - 1
+            
+            if 0 <= choice_idx < len(variant_list):
+                variant_name = variant_list[choice_idx][0]
+                return variant_name, variant_list[choice_idx][1]
+            else:
+                print("Invalid selection")
+                return None, None
+                
+        except (ValueError, KeyboardInterrupt):
+            print("\nOperation cancelled")
+            return None, None
+    
+    def setup_device(self, device_model, interface=None, serial_port=None, baudrate=None):
         """Setup device connection parameters"""
-        # Validate device
-        if device_model not in self.config["devices"]:
+        # Find device configuration
+        category, variant, variant_config = self.find_device_config(device_model)
+        
+        if category is None:
             print(f"Error: Unsupported device model: {device_model}")
+            print(f"Supported models: {', '.join(self.get_all_device_models())}")
             return False
         
-        device_config = self.config["devices"][device_model]
+        # If variant selection is needed
+        if variant is None:
+            variant, variant_config = self.prompt_variant_selection(category)
+            if variant is None:
+                return False
+        
+        cat_config = self.config["devices"][category]
+        
+        # Auto-select interface if not specified
+        if interface is None:
+            # Check if default interface is specified
+            if "default_interface" in cat_config:
+                interface = cat_config["default_interface"]
+                print(f"Using default interface: {interface.upper()}")
+            # If only one interface available, use it
+            elif len(cat_config["interfaces"]) == 1:
+                interface = cat_config["interfaces"][0]
+                print(f"Auto-selected interface: {interface.upper()}")
+            else:
+                # Multiple interfaces, need user to specify
+                print(f"Error: Multiple interfaces available: {', '.join(cat_config['interfaces'])}")
+                print("Please specify interface with -i option")
+                return False
         
         # Validate interface
-        if interface not in device_config["interfaces"]:
-            print(f"Error: Device {device_model} does not support {interface.upper()} interface")
+        if interface not in cat_config["interfaces"]:
+            print(f"Error: Device {category} does not support {interface.upper()} interface")
+            print(f"Supported interfaces: {', '.join(cat_config['interfaces'])}")
             return False
         
-        self.device_model = device_model
+        # Save configuration
+        self.device_category = category
+        self.device_variant = variant
+        self.variant_config = variant_config
         self.interface = interface
         
-        # Set connection parameters
+        # Setup connection parameters
         if interface == "usb":
             self.connection_params = self.USB_PARAMS
         else:  # uart
-            if not com_port:
-                print("Error: UART interface requires COM port specification")
+            if not serial_port:
+                print("Error: UART interface requires serial port specification (-p option)")
+                print("Examples: -p COM3 (Windows), -p /dev/ttyUSB0 (Linux)")
                 return False
             
             baud = baudrate or self.DEFAULT_BAUDRATE
-            self.connection_params = f"-p {com_port},{baud}"
+            self.connection_params = f"-p {serial_port},{baud}"
         
-        print(f"Device: {device_model}")
+        print(f"Device Category: {category}")
+        print(f"Device Variant: {variant}")
         print(f"Interface: {interface.upper()}")
         print(f"Connection params: {self.connection_params}")
         return True
@@ -187,16 +295,62 @@ class BlhostHelper:
         print("❌ Cannot get command result")
         return False
     
-    def initialize_flash(self):
+    def get_fcb_file_for_flash_size(self, flash_size):
+        """Get FCB file for specific flash size"""
+        if not self.variant_config or "flash_configs" not in self.variant_config:
+            return None
+        
+        flash_configs = self.variant_config["flash_configs"]
+        if flash_size in flash_configs:
+            return flash_configs[flash_size].get("fcb_file")
+        
+        return None
+    
+    def get_default_flash_size(self):
+        """Get default flash size"""
+        if not self.variant_config or "flash_configs" not in self.variant_config:
+            return None
+        
+        flash_configs = self.variant_config["flash_configs"]
+        
+        # Find configuration marked as default
+        for size, config in flash_configs.items():
+            if config.get("default", False):
+                return size
+        
+        # If no default marked, return first one
+        if flash_configs:
+            return list(flash_configs.keys())[0]
+        
+        return None
+    
+    def initialize_flash(self, flash_size=None):
         """Initialize FLASH"""
         print("Initializing FLASH...")
         
-        device_config = self.config["devices"][self.device_model]
-        fcb_file = self.fcb_dir / device_config["fcb_file"]
+        if not self.variant_config:
+            print("❌ Device not configured")
+            return False
+        
+        # 如果未指定 flash 大小，使用默认值
+        if flash_size is None:
+            flash_size = self.get_default_flash_size()
+            if flash_size:
+                print(f"Using default flash size: {flash_size}")
+        
+        # 获取 FCB 文件
+        fcb_filename = self.get_fcb_file_for_flash_size(flash_size)
+        if not fcb_filename:
+            print(f"❌ No FCB file configured for flash size: {flash_size}")
+            return False
+        
+        fcb_file = self.fcb_dir / fcb_filename
         
         if not fcb_file.exists():
             print(f"❌ FCB file does not exist: {fcb_file}")
             return False
+        
+        print(f"Using FCB file: {fcb_filename}")
         
         commands = [
             "fill-memory 0x2000F000 4 0xC0100002 word",
@@ -215,11 +369,10 @@ class BlhostHelper:
     
     def get_flash_size_options(self):
         """Get FLASH size options for current device"""
-        if not self.device_model:
+        if not self.variant_config or "flash_configs" not in self.variant_config:
             return []
         
-        device_config = self.config["devices"].get(self.device_model, {})
-        return device_config.get("flash_sizes", [])
+        return list(self.variant_config["flash_configs"].keys())
     
     def convert_flash_size_to_bytes(self, size_str):
         """Convert FLASH size string to bytes"""
@@ -253,9 +406,9 @@ class BlhostHelper:
         """Prompt user to select FLASH size"""
         options = self.get_flash_size_options()
         if not options:
-            return None
+            return None, None
         
-        print(f"\nSupported FLASH sizes for device {self.device_model}:")
+        print(f"\nSupported FLASH sizes for device {self.device_variant}:")
         for i, size in enumerate(options, 1):
             size_bytes = self.convert_flash_size_to_bytes(size)
             if size_bytes:
@@ -270,25 +423,28 @@ class BlhostHelper:
             
             if not choice or choice == str(len(options) + 1):
                 # Full erase, use default FLASH size
-                default_size = self.config["devices"][self.device_model].get("default_flash_size")
+                default_size = self.get_default_flash_size()
                 if default_size:
-                    return self.convert_flash_size_to_bytes(default_size)
-                return None
+                    size_bytes = self.convert_flash_size_to_bytes(default_size)
+                    return size_bytes, default_size
+                return None, None
             
             choice_idx = int(choice) - 1
             if 0 <= choice_idx < len(options):
-                return self.convert_flash_size_to_bytes(options[choice_idx])
+                size_str = options[choice_idx]
+                size_bytes = self.convert_flash_size_to_bytes(size_str)
+                return size_bytes, size_str
             
         except (ValueError, KeyboardInterrupt):
             print("\nOperation cancelled")
-            return None
+            return None, None
         
-        return None
+        return None, None
     
     def erase_flash(self, start_addr=None, size=None):
         """Erase FLASH"""
-        if not self.initialize_flash():
-            return False
+        # 确定 flash 大小字符串（用于初始化）
+        flash_size_str = None
         
         # Handle address parameter
         if start_addr is None:
@@ -314,11 +470,12 @@ class BlhostHelper:
             flash_options = self.get_flash_size_options()
             if len(flash_options) == 1:
                 # Only one option, use it directly
-                size_bytes = self.convert_flash_size_to_bytes(flash_options[0])
-                print(f"Auto-selected FLASH size: {flash_options[0]} ({size_bytes:0,} bytes) - full erase")
+                flash_size_str = flash_options[0]
+                size_bytes = self.convert_flash_size_to_bytes(flash_size_str)
+                print(f"Auto-selected FLASH size: {flash_size_str} ({size_bytes:0,} bytes) - full erase")
             else:
                 # Multiple options, let user choose
-                size_bytes = self.prompt_flash_size_selection()
+                size_bytes, flash_size_str = self.prompt_flash_size_selection()
                 if size_bytes is None:
                     print("❌ No valid FLASH size selected")
                     return False
@@ -328,9 +485,18 @@ class BlhostHelper:
                 size_bytes = int(size, 0)
             else:
                 size_bytes = size
+            # 尝试找到对应的 flash 大小字符串
+            for fs, fb in self.FLASH_SIZE_MAPPING.items():
+                if fb == size_bytes:
+                    flash_size_str = fs
+                    break
         
         if size_bytes is None or size_bytes <= 0:
             print("❌ Invalid erase size")
+            return False
+        
+        # 初始化 FLASH（使用对应的 FCB 文件）
+        if not self.initialize_flash(flash_size_str):
             return False
         
         print(f"Starting FLASH erase: {start_addr}, size: {size_bytes:0,} bytes")
@@ -406,7 +572,7 @@ class BlhostHelper:
         # Generate output filename
         if not output_file:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = self.output_dir / f"{self.device_model}_{start_addr}_{timestamp}.bin"
+            output_file = self.output_dir / f"{self.device_variant}_{start_addr}_{timestamp}.bin"
         else:
             output_file = Path(output_file)
         
@@ -470,11 +636,52 @@ def list_devices():
             config = json.load(f)
         
         print("Supported devices:")
-        print("-" * 50)
-        for name, device_config in config["devices"].items():
-            interfaces = ", ".join(device_config["interfaces"])
-            flash_sizes = ", ".join(device_config["flash_sizes"])
-            print(f"{name:12} | {interfaces:10} | {flash_sizes}")
+        print("=" * 90)
+        
+        for category, cat_config in config["devices"].items():
+            interfaces = ", ".join(cat_config.get("interfaces", []))
+            default_iface = cat_config.get("default_interface", "")
+            if default_iface:
+                interfaces += f" (default: {default_iface})"
+            
+            desc = cat_config.get("description", category)
+            
+            # Print category header
+            print(f"\n{category:<20} - {desc}")
+            print(f"{'':20}   Interfaces: {interfaces}")
+            
+            # Print variants
+            if "variants" in cat_config:
+                print(f"{'':20}   Variants:")
+                for variant_name, variant_config in cat_config["variants"].items():
+                    flash_configs = variant_config.get("flash_configs", {})
+                    flash_list = []
+                    for size, fc in flash_configs.items():
+                        if fc.get("default", False):
+                            flash_list.append(f"{size} (default)")
+                        else:
+                            flash_list.append(size)
+                    flash_sizes = ", ".join(flash_list)
+                    
+                    var_desc = variant_config.get("description", "")
+                    print(f"{'':20}     - {variant_name:<15} Flash: {flash_sizes}")
+        
+        print("\n" + "=" * 90)
+        print("\nUsage examples:")
+        print("  # Use category name (will prompt for variant if multiple exist):")
+        print("    python blhost_helper.py -d FCM363X --test")
+        print("\n  # Use specific variant name (avoids prompt):")
+        print("    python blhost_helper.py -d FCM363XAB --test")
+        print("    python blhost_helper.py -d FCM363XLAC --test")
+        print("\n  # Specify interface (overrides default):")
+        print("    python blhost_helper.py -d FCM363X -i uart -p COM3 --test")
+        print("\n  # Use default interface:")
+        print("    python blhost_helper.py -d FCM363X --test        # USB (default)")
+        print("    python blhost_helper.py -d FCM363XL -p COM3 --test  # UART (default)")
+        print("    python blhost_helper.py -d FGMH63X --test        # USB (default)")
+        print("\n  # Write firmware:")
+        print("    python blhost_helper.py -d FCM363XAC --write -f firmware.bin")
+        print("    python blhost_helper.py -d FCME63X --write -f app.bin -a 0x08000000")
         
     except Exception as e:
         print(f"❌ Cannot load device list: {e}")
@@ -485,40 +692,51 @@ def main():
         description="NXP RW61x BLHOST Helper Script",
         epilog="""
 Usage examples:
-  # List devices
+  # List all supported devices
   python %(prog)s --list
   
-  # Test connection
-  python %(prog)s -d FCM363X -i usb --test
+  # Test connection (using default USB interface)
+  python %(prog)s -d FCM363X --test
+  python %(prog)s -d FGMH63X --test
   
-  # Read FLASH
-  python %(prog)s -d FCM363X -i usb --read -a 0x08000400 -s 0x200 -o test.bin
+  # Test connection (UART interface - required for FCM363XL)
+  python %(prog)s -d FCM363XL -p COM3 --test
+  python %(prog)s -d FCMA62N -p /dev/ttyUSB0 --test  # Linux
   
-  # Erase FLASH (address and size are optional)
-  python %(prog)s -d FCM363X -i usb --erase -a 0x08000000 -s 0x1000
-  python %(prog)s -d FCM363X -i usb --erase -a 0x08000000  
-  python %(prog)s -d FCM363X -i usb --erase
+  # Specify variant explicitly (avoids selection prompt)
+  python %(prog)s -d FCM363XAB --test
+  python %(prog)s -d FCM363XLAC --test
   
-  # Write firmware
-  python %(prog)s -d FCM363X -i usb --write -f firmware.bin -a 0x08000000
+  # Read FLASH memory
+  python %(prog)s -d FCM363X --read -a 0x08000400 -s 0x200 -o test.bin
   
-  # Enable debug output
-  python %(prog)s -d FCM363X -i usb --test --debug
+  # Erase FLASH (address and size are optional, will prompt if not specified)
+  python %(prog)s -d FGMH63X --erase
+  python %(prog)s -d FCM363X --erase -a 0x08000000 -s 0x800000
+  
+  # Write firmware to FLASH
+  python %(prog)s -d FCM363XAC --write -f firmware.bin -a 0x08000000
+  python %(prog)s -d FCME63X --write -f app.bin
+  
+  # Override default interface
+  python %(prog)s -d FCM363X -i uart -p COM5 --test
+  
+  # Enable debug output for troubleshooting
+  python %(prog)s -d FCM365X --test --debug
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     # Device parameters
     parser.add_argument('-d', '--device', 
-                       choices=['FCM363X', 'FCM363XL', 'FCM365X', 'FCMA62N', 'FRDMRW612', 'RDRW612BGA'],
-                       help='Device model')
+                       help='Device model (category or specific variant, e.g., FCM363X or FCM363XAA)')
     parser.add_argument('-i', '--interface', 
                        choices=['usb', 'uart'],
-                       help='Connection interface')
-    parser.add_argument('-c', '--com', 
-                       help='COM port (required for UART)')
+                       help='Connection interface (optional if default is set in config)')
+    parser.add_argument('-p', '--port', 
+                       help='Serial port (required for UART, e.g., COM3 on Windows, /dev/ttyUSB0 on Linux)')
     parser.add_argument('-b', '--baudrate', type=int,
-                       help='Baud rate (optional for UART)')
+                       help='Baud rate (optional for UART, default: 2000000)')
     parser.add_argument('--debug', action='store_true',
                        help='Show detailed debug information')
     
@@ -543,24 +761,19 @@ Usage examples:
         list_devices()
         return 0
     
-    # Need device and interface parameters
-    if not args.device or not args.interface:
+    # Need device parameter for operations
+    if not args.device:
         if not any([args.test, args.read, args.write, args.erase]):
             parser.print_help()
             return 0
-        print("❌ Device model and interface must be specified")
-        return 1
-    
-    # UART requires COM port
-    if args.interface == 'uart' and not args.com:
-        print("❌ UART interface requires COM port specification")
+        print("❌ Device model must be specified")
         return 1
     
     # Create helper instance
     tool = BlhostHelper(debug=args.debug)
     
-    # Setup device
-    if not tool.setup_device(args.device, args.interface, args.com, args.baudrate):
+    # Setup device (interface can be None, will be auto-selected)
+    if not tool.setup_device(args.device, args.interface, args.port, args.baudrate):
         return 1
     
     print("-" * 50)

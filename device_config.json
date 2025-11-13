@@ -1,34 +1,159 @@
 {
     "devices": {
         "FCM363X": {
-            "fcb_file": "fcm363x.fcb.bin",
+            "description": "Quectel FCM363X series modules",
             "interfaces": ["uart", "usb"],
-            "flash_sizes": ["8M", "16M"]
+            "default_interface": "usb",
+            "variants": {
+                "FCM363XAB": {
+                    "description": "FCM363XAB with 8M Flash",
+                    "flash_configs": {
+                        "8M": {
+                            "fcb_file": "XMC_XM25QH64D.bin",
+                            "default": true
+                        }
+                    }
+                },
+                "FCM363XAC": {
+                    "description": "FCM363XAC with 8M Flash & 8M pSRAM",
+                    "flash_configs": {
+                        "8M": {
+                            "fcb_file": "XMC_XM25QH64D.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
         },
         "FCM363XL": {
-            "fcb_file": "fcm363xl.fcb.bin",
+            "description": "Quectel FCM363X-L series modules",
             "interfaces": ["uart"],
-            "flash_sizes": ["8M"]
+            "default_interface": "uart",
+            "variants": {
+                "FCM363XLAA": {
+                    "description": "FCM363X-L with 8M Flash",
+                    "flash_configs": {
+                        "8M": {
+                            "fcb_file": "MXIC_MX25L6433F.bin",
+                            "default": true
+                        }
+                    }
+                },
+                "FCM363XLAB": {
+                    "description": "FCM363X-L with 8M Flash & 8M pSRAM",
+                    "flash_configs": {
+                        "8M": {
+                            "fcb_file": "MXIC_MX25L6433F.bin",
+                            "default": true
+                        }
+                    }
+                },
+                "FCM363XLAC": {
+                    "description": "FCM363X-L with 16M Flash & 8M pSRAM",
+                    "flash_configs": {
+                        "16M": {
+                            "fcb_file": "MXIC_MX25L12845G.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
+        },
+        "FGMH63X": {
+            "description": "Quectel FGMH63X module",
+            "interfaces": ["uart", "usb"],
+            "default_interface": "usb",
+            "variants": {
+                "FGMH63X": {
+                    "description": "FGMH63X with 16M Flash & 8M pSRAM",
+                    "flash_configs": {
+                        "16M": {
+                            "fcb_file": "XMC_XM25QH128D.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
+        },
+        "FCME63X": {
+            "description": "Quectel FCME63X module",
+            "interfaces": ["uart", "usb"],
+            "default_interface": "usb",
+            "variants": {
+                "FCME63X": {
+                    "description": "FCME63X with 32M Flash & 8M pSRAM",
+                    "flash_configs": {
+                        "32M": {
+                            "fcb_file": "MXIC_MX25L25645G.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
         },
         "FCM365X": {
-            "fcb_file": "fcm365x.fcb.bin",
+            "description": "Quectel FCM365X module",
             "interfaces": ["uart", "usb"],
-            "flash_sizes": ["8M"]
+            "default_interface": "usb",
+            "variants": {
+                "FCM365X": {
+                    "description": "FCM365X with 8M Flash",
+                    "flash_configs": {
+                        "8M": {
+                            "fcb_file": "MXIC_MX25L6433F.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
         },
         "FCMA62N": {
-            "fcb_file": "fcma62n.fcb.bin",
+            "description": "Quectel FCMA62N modules",
             "interfaces": ["uart"],
-            "flash_sizes": ["8M"]
+            "default_interface": "uart",
+            "variants": {
+                "FCMA62N": {
+                    "description": "FCMA62N with 8M Flash",
+                    "flash_configs": {
+                        "8M": {
+                            "fcb_file": "XMC_XM25QH64D.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
         },
         "FRDMRW612": {
-            "fcb_file": "frdmrw612.fcb.bin",
+            "description": "NXP FRDM-RW612 development board",
             "interfaces": ["uart"],
-            "flash_sizes": ["64M"]
+            "default_interface": "uart",
+            "variants": {
+                "FRDMRW612": {
+                    "description": "FRDM-RW612 with 64M Flash",
+                    "flash_configs": {
+                        "64M": {
+                            "fcb_file": "Winbond_W25Q512JV.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
         },
         "RDRW612BGA": {
-            "fcb_file": "rdrw612bga.fcb.bin",
+            "description": "NXP RD-RW612-BGA development board",
             "interfaces": ["uart"],
-            "flash_sizes": ["64M"]
+            "default_interface": "uart",
+            "variants": {
+                "RDRW612BGA": {
+                    "description": "RD-RW612-BGA with 64M Flash",
+                    "flash_configs": {
+                        "64M": {
+                            "fcb_file": "MXIC_MX25U51245G.bin",
+                            "default": true
+                        }
+                    }
+                }
+            }
         }
     }
 }
